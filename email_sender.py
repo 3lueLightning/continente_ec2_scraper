@@ -45,9 +45,7 @@ try:
     #Provide the contents of the email.
     response = client.send_email(
         Destination={
-            'ToAddresses': [
-                args.recipients,
-            ],
+            'ToAddresses': args.recipients,
         },
         Message={
             'Body': {
@@ -65,7 +63,7 @@ try:
                 'Data': SUBJECT,
             },
         },
-        Source=args.sender,
+        Source=args.sender[0],
     )
 except ClientError as e:
     print(e.response['Error']['Message'])
