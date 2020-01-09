@@ -1,3 +1,6 @@
 *credential*
-my_bootstrap_script.sh
+my_bootstrap_script*
 launch_cloudformation.sh
+*swp
+.idea
+venv
