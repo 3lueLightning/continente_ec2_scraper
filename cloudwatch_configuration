@@ -1,7 +1,7 @@
 [general]
 state_file = /var/awslogs/state/agent-state
  
-[/var/log/syslog]
+[ScraperTestLogs]
 file = /var/log/syslog
 log_group_name = ScraperTestLogs
 log_stream_name = {instance_id}
