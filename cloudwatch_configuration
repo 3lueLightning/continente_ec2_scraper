@@ -1,8 +1,14 @@
 [general]
 state_file = /var/awslogs/state/agent-state
- 
-[ScraperTestLogs]
+
+[SystemLogs]
 file = /var/log/syslog
 log_group_name = ScraperTestLogs
 log_stream_name = {instance_id}
+datetime_format = %b %d %H:%M:%S
+
+[ScraperCoreLogs]
+file = /var/log/scraper.log
+log_group_name = ScraperTestLogs
+log_stream_name = ScraperCore
 datetime_format = %b %d %H:%M:%S
