@@ -1,2 +1,5 @@
 boto3==1.10.46
 requests==2.22.0
+pandas==0.25.3
+bs4==4.8.2
+selenium==3.141.0
