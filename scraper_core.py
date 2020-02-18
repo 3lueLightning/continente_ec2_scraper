@@ -170,24 +170,19 @@ def scrape_subcategory(driver, url):
   return products
 
 
-def _scraping_status_updater(status_df, category, category_lvl1, success, n_products):
-  new_status = {'category': [category], 'category_lvl1': [category_lvl1]
-    , 'success': [success], 'n_products': [n_products]}
-  status_df.append(new_status, ignore_index=True)
-  status_df.to_csv(BASE_DIR + SCRAPING_STATUS_FN, mode='a', header=False, index=False)
-  return status_df
+def scraping_status_updater(status_df, category, category_lvl1, success, n_products):
+    new_status = {'category': category, 'category_lvl1': category_lvl1, 'success': success, 'n_products': n_products}
+    status_df = status_df.append(new_status, ignore_index=True)
+    status_df.to_csv(BASE_DIR + SCRAPING_STATUS_FN, mode='a', header=False, index=False)
+    return status_df
 
 
 def category_to_files_scraper(driver, categories_menu, categories_table, selected_categories):
   Path(BASE_DIR).mkdir(parents=True, exist_ok=True)
   scraping_status_df = pd.DataFrame({'category': [], 'category_lvl1': [], 'success': [], 'n_products': []})
+  scraping_status_df = scraping_status_df.astype({'success': int, 'n_products': int})
   scraping_status_df.to_csv(BASE_DIR + SCRAPING_STATUS_FN, index=False)
   products_by_subcat = {}
-  def _scraping_status_updater(status_df, category, category_lvl1, success, n_products):
-    new_status = {'category': category, 'category_lvl1': category_lvl1, 'success': success, 'n_products': n_products}
-    status_df = status_df.append(new_status, ignore_index=True)
-    status_df.to_csv(BASE_DIR + SCRAPING_STATUS_FN, mode='a', header=False, index=False)
-    return status_df
   for category, category_id in categories_menu[1:]:
     time.sleep(uniform(8,15))
     logger.info('\n'+ 10*'=' + category + 10*'=')
@@ -203,6 +198,7 @@ def category_to_files_scraper(driver, categories_menu, categories_table, selecte
         # need to explicitly test 'is not None' bellow
         if selected_categories is not None and \
                 selected_categories.query(f"category == '{category}' & category_lvl1 == '{category_lvl1}'").empty:
+          logger.info(f'category_lvl1 "{category_lvl1}" NOT selected for scraping')
           continue
         logger.info(f'category_lvl1 "{category_lvl1}" selected for scraping')
         time.sleep(uniform(2,4))
@@ -210,7 +206,8 @@ def category_to_files_scraper(driver, categories_menu, categories_table, selecte
           url = categories_lvl1_url( category_lvl1_id)
           driver.get(url)
         except InvalidArgumentException:
-          scraping_status_df = _scraping_status_updater(scraping_status_df, category, category_lvl1, False, 0)
+          logger.debug('failed to get subcategory URL')
+          scraping_status_df = scraping_status_updater(scraping_status_df, category, category_lvl1, False, 0)
           continue
         logger.info( f'success for category_lvl1: {category_lvl1}')
         category_match = categories_table.query(f"category == '{category}' & category_lvl1 == '{category_lvl1}'")
@@ -228,8 +225,8 @@ def category_to_files_scraper(driver, categories_menu, categories_table, selecte
           subcat_products = scrape_subcategory(driver, url)
           logger.debug('scraped subcategory')
         except WebDriverException:
-          logger.debug('subcategory scraping failed updating status')
-          scraping_status_df = _scraping_status_updater(scraping_status_df, category, category_lvl1, False, 0)
+          logger.debug('subcategory scraping failed')
+          scraping_status_df = scraping_status_updater(scraping_status_df, category, category_lvl1, False, 0)
           continue
         logger.debug('updating product dictionaries')
         products_by_subcat[internal_category_id] = subcat_products
@@ -238,9 +235,10 @@ def category_to_files_scraper(driver, categories_menu, categories_table, selecte
         with open(BASE_DIR + PRODUCTS_HTML_FN, 'ab') as storage_file:
           logger.debug('dumping product data in pickle file')
           pickle.dump( subcat_products_html, storage_file)
-          scraping_status_df = _scraping_status_updater(scraping_status_df, category, category_lvl1, True, len(subcat_products))
+          scraping_status_df = scraping_status_updater(scraping_status_df, category, category_lvl1, True, len(subcat_products))
     else:
-      scraping_status_df = _scraping_status_updater(scraping_status_df, category, 'ALL', False, 0)
+      logger.debug('click failed')
+      scraping_status_df = scraping_status_updater(scraping_status_df, category, 'ALL', False, 0)
   logger.info('scraping status')
   logger.info(scraping_status_df)
   return products_by_subcat
@@ -309,4 +307,3 @@ wd.quit()
 s3.Bucket(BUCKET_NAME).Object(BUCKET_KEY_BASE + str(date.today())).upload_file(BASE_DIR + PRODUCTS_HTML_FN)
 s3.Bucket(BUCKET_NAME).Object(CATEGORIES_FN).upload_file(BASE_DIR + CATEGORIES_FN)
 s3.Bucket(BUCKET_NAME).Object(SCRAPING_STATUS_FN).upload_file(BASE_DIR + SCRAPING_STATUS_FN)
-
