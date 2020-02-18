@@ -4,3 +4,4 @@ launch_cloudformation.sh
 *swp
 .idea
 venv
+debug_user_data.yaml
