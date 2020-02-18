@@ -5,7 +5,7 @@ import logging
 import hashlib
 import pandas as pd
 from pathlib import Path
-from datetime import date
+from datetime import date, datetime
 from random import randint, uniform
 from bs4 import BeautifulSoup as soup
 from botocore.exceptions import ClientError
@@ -26,11 +26,13 @@ CATEGORIES_TABLE_KEY = 'categories_table.csv'
 LOGGING_LEVEL = logging.DEBUG
 LOGGING_FN = 'parser.log'
 SCRAPING_STATUS_FN = 'scraping_status.csv'
+# if a file with category and category_lvl1 columns is selected then only the
+# page matching the subcategories selected will be scraped
+SELECTED_CATEGORIES_FN_PATH = None
 #if the value here is NONE all page are taken otherwise only the selected number of pages is sampled
-SELECTED_CATEGORIES_FN_PATH = None#'/home/ubuntu/test.csv'
-N_SAMPLE_CATEGORIES = 4#None
-N_SAMPLE_SUBCATEGORIES = 4#None
-N_SAMPLE_PAGES = 4#None
+N_SAMPLE_CATEGORIES = 2#None
+N_SAMPLE_SUBCATEGORIES = 2#None
+N_SAMPLE_PAGES = None
 
 popular_useragents = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36",
@@ -95,10 +97,8 @@ def get_last_page_simple(driver, wait=7, n_attempts=3):
   xpath = "//div[@class='pagingInnerArea _asyncPaginationWrapper']//li[last()]"
   for i in range(1, n_attempts + 1):
     try:
-      print(i, wait)
       logger.debug(f'function get_last_page - waiting {i * wait}s - attempt number {i}')
       time.sleep(i * wait)
-      print('finished waiting')
       last_page = driver.find_element_by_xpath(xpath).text
     except (NoSuchElementException, StaleElementReferenceException):
       last_page = None
@@ -120,11 +120,8 @@ def get_last_page(driver, wait=7, n_attempts=3, verification=True):
   verification: use some logic to check that the last page detected makes sense\n
   """
   last_page = get_last_page_simple(driver, wait=wait, n_attempts=n_attempts)
-  logger.debug(f'last_page {last_page} before verification')
   n_containers = len( scrape_containers(driver.page_source))
-  print(f'n containers {n_containers}')
   if last_page and verification and n_containers <= 20 and last_page > 1:
-    logger.debug('verification failed attempting to get last page again')
     last_page = get_last_page_simple(driver, 3 * (wait + 1), n_attempts=1)
   return last_page
 
@@ -171,15 +168,19 @@ def scrape_subcategory(driver, url):
 
 
 def scraping_status_updater(status_df, category, category_lvl1, success, n_products):
-    new_status = {'category': category, 'category_lvl1': category_lvl1, 'success': success, 'n_products': n_products}
+    new_status = {'category': category, 'category_lvl1': category_lvl1,
+                  'success': success, 'n_products': n_products,
+                  'creation_date': datetime.now().strftime("%Y-%m-%d %H:%M")}
     status_df = status_df.append(new_status, ignore_index=True)
-    status_df.to_csv(BASE_DIR + SCRAPING_STATUS_FN, mode='a', header=False, index=False)
+    status_df[-1:].to_csv(BASE_DIR + SCRAPING_STATUS_FN, mode='a', header=False, index=False)
     return status_df
 
 
 def category_to_files_scraper(driver, categories_menu, categories_table, selected_categories):
   Path(BASE_DIR).mkdir(parents=True, exist_ok=True)
-  scraping_status_df = pd.DataFrame({'category': [], 'category_lvl1': [], 'success': [], 'n_products': []})
+  scraping_status_df = pd.DataFrame({'category': [], 'category_lvl1': [],
+                                     'success': [], 'n_products': [],
+                                     'creation_date': []})
   scraping_status_df = scraping_status_df.astype({'success': int, 'n_products': int})
   scraping_status_df.to_csv(BASE_DIR + SCRAPING_STATUS_FN, index=False)
   products_by_subcat = {}
@@ -195,6 +196,7 @@ def category_to_files_scraper(driver, categories_menu, categories_table, selecte
         subcategory_ids = subcategory_ids[:N_SAMPLE_SUBCATEGORIES + 1]
       # iterate from the 2nd element to avoid getting the 1st category: '(todos)'
       for category_lvl1, category_lvl1_id in subcategory_ids[1:]:
+        category_lvl1 = category_lvl1.strip("'| |\"")
         # need to explicitly test 'is not None' bellow
         if selected_categories is not None and \
                 selected_categories.query(f"category == '{category}' & category_lvl1 == '{category_lvl1}'").empty:
@@ -211,19 +213,18 @@ def category_to_files_scraper(driver, categories_menu, categories_table, selecte
           continue
         logger.info( f'success for category_lvl1: {category_lvl1}')
         category_match = categories_table.query(f"category == '{category}' & category_lvl1 == '{category_lvl1}'")
-        if len(category_match):
+        if not category_match.empty:
           internal_category_id = category_match.index[0]
           logger.debug('scraped category matched to existing category')
         else:
-          new_subcategory = pd.DataFrame(
-            {'category': [category], 'category_lvl1': [category_lvl1], 'creation_date': [date.today()]})
+          new_subcategory = pd.DataFrame({'category': [category],
+            'category_lvl1': [category_lvl1], 'creation_date': [date.today()]})
           categories_table = categories_table.append( new_subcategory)
           new_subcategory.to_csv(BASE_DIR + CATEGORIES_FN, mode='a', header=False, index=False)
           internal_category_id = categories_table.index[-1]
           logger.debug('new category and/or subcategory created')
         try:
           subcat_products = scrape_subcategory(driver, url)
-          logger.debug('scraped subcategory')
         except WebDriverException:
           logger.debug('subcategory scraping failed')
           scraping_status_df = scraping_status_updater(scraping_status_df, category, category_lvl1, False, 0)
@@ -233,7 +234,6 @@ def category_to_files_scraper(driver, categories_menu, categories_table, selecte
         # converting the beautiful soup html into string to be able to pickle it and storing it in dict
         subcat_products_html = {internal_category_id: [str(prod) for prod in subcat_products]}
         with open(BASE_DIR + PRODUCTS_HTML_FN, 'ab') as storage_file:
-          logger.debug('dumping product data in pickle file')
           pickle.dump( subcat_products_html, storage_file)
           scraping_status_df = scraping_status_updater(scraping_status_df, category, category_lvl1, True, len(subcat_products))
     else:
@@ -251,7 +251,7 @@ def find_categories(driver):
   categories_menu_nav = driver.find_elements_by_xpath("//ul[@id='categoryMenu']//li")
   categories_menu = [(li.text.strip(), li.get_property('id')) for li in categories_menu_nav]
   if N_SAMPLE_CATEGORIES:
-    categories_menu = categories_menu[:N_SAMPLE_CATEGORIES]
+    categories_menu = categories_menu[:N_SAMPLE_CATEGORIES + 1]
     logger.warning(f'only the first {N_SAMPLE_CATEGORIES} were selected')
   logger.info(categories_menu)
   if not categories_menu:
@@ -276,10 +276,13 @@ def download_or_create_categories_table(s3):
 
 logger = logging.getLogger(__name__)
 logger.setLevel(LOGGING_LEVEL)
+formatter = logging.Formatter(fmt='%(asctime)s %(levelname)-8s %(message)s',
+                                  datefmt='%Y-%m-%d %H:%M:%S')
 file_handler = logging.FileHandler(LOGGING_FN)
+file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 logger.addHandler(logging.StreamHandler()) # TODO: remove output to console
-logger.info('parsing starting')
+logger.info('scraping starting')
 
 chrome_options = webdriver.ChromeOptions()
 chrome_options.add_argument('--headless')

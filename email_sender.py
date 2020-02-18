@@ -3,11 +3,19 @@
 import boto3
 from botocore.exceptions import ClientError
 import argparse
+import pandas as pd
 
-parser = argparse.ArgumentParser(description='provide sender and receiver email addresser for this notification \					     (both most have already been verified byAWS SES)')
+BASE_DIR = "/home/ubuntu/scraping/"
+SCRAPING_STATUS_FN = 'scraping_status.csv'
 
-parser.add_argument('--sender', nargs=1, required=True, help='email address through which SES will send the notification')
-parser.add_argument('--recipients',  nargs='+', required=True, help='email address(es) receiving the notification')
+scraping_status = pd.read_csv(BASE_DIR + SCRAPING_STATUS_FN)
+
+parser = argparse.ArgumentParser(description="provide sender and receiver email addresser for this notification \
+\n (both most have already been verified byAWS SES)")
+
+parser.add_argument('--sender', nargs=1, required=True,
+                    help='email address through which SES will send the notification')
+parser.add_argument('--recipients', nargs='+', required=True, help='email address(es) receiving the notification')
 args = parser.parse_args()
 
 AWS_REGION = "eu-west-1"
@@ -16,33 +24,29 @@ AWS_REGION = "eu-west-1"
 SUBJECT = "Amazon SES Test (SDK for Python)"
 
 # The email body for recipients with non-HTML email clients.
-BODY_TEXT = ("Amazon SES Test (Python)\r\n"
-             "This email was sent with Amazon SES using the "
-             "AWS SDK for Python (Boto)."
-            )
-            
+BODY_TEXT = ("Scrape finished\r\n"
+             f"{scraping_status}"
+             )
+
 # The HTML body of the email.
-BODY_HTML = """<html>
+BODY_HTML = f"""<html>
 <head></head>
 <body>
-  <h1>Amazon SES Test (SDK for Python)</h1>
-  <p>This email was sent with
-    <a href='https://aws.amazon.com/ses/'>Amazon SES</a> using the
-    <a href='https://aws.amazon.com/sdk-for-python/'>
-      AWS SDK for Python (Boto)</a>.</p>
+  <h1>Scrape finished</h1>
+  <p>{scraping_status.to_html()}</p>
 </body>
 </html>
-"""            
+"""
 
 # The character encoding for the email.
 CHARSET = "UTF-8"
 
 # Create a new SES resource and specify a region.
-client = boto3.client('ses',region_name=AWS_REGION)
+client = boto3.client('ses', region_name=AWS_REGION)
 
 # Try to send the email.
 try:
-    #Provide the contents of the email.
+    # Provide the contents of the email.
     response = client.send_email(
         Destination={
             'ToAddresses': args.recipients,
