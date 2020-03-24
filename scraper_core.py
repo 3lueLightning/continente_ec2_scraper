@@ -30,8 +30,8 @@ SCRAPING_STATUS_FN = 'scraping_status.csv'
 # page matching the subcategories selected will be scraped
 SELECTED_CATEGORIES_FN_PATH = None
 #if the value here is NONE all page are taken otherwise only the selected number of pages is sampled
-N_SAMPLE_CATEGORIES = 2#None
-N_SAMPLE_SUBCATEGORIES = 2#None
+N_SAMPLE_CATEGORIES = None
+N_SAMPLE_SUBCATEGORIES = None
 N_SAMPLE_PAGES = None
 
 popular_useragents = [
@@ -177,7 +177,6 @@ def scraping_status_updater(status_df, category, category_lvl1, success, n_produ
 
 
 def category_to_files_scraper(driver, categories_menu, categories_table, selected_categories):
-  Path(BASE_DIR).mkdir(parents=True, exist_ok=True)
   scraping_status_df = pd.DataFrame({'category': [], 'category_lvl1': [],
                                      'success': [], 'n_products': [],
                                      'creation_date': []})
@@ -189,7 +188,7 @@ def category_to_files_scraper(driver, categories_menu, categories_table, selecte
     logger.info('\n'+ 10*'=' + category + 10*'=')
     successful_click = click_category(driver, category_id, category)
     if successful_click:
-      time.sleep(uniform(3,5))
+      time.sleep(uniform(3, 5))
       subcat_nav = driver.find_elements_by_xpath(f"//li[@id='{category_id}']//li")
       subcategory_ids = [(elem.text.strip(), elem.get_property('id')) for elem in subcat_nav]
       if N_SAMPLE_SUBCATEGORIES:
@@ -260,7 +259,7 @@ def find_categories(driver):
 
 
 def download_or_create_categories_table(s3):
-  Path(BASE_DIR).mkdir(parents=True, exist_ok=True)
+  #Path(BASE_DIR).mkdir(parents=True, exist_ok=True)
   try:
     s3.Bucket(BUCKET_NAME).Object(CATEGORIES_FN).download_file(BASE_DIR + CATEGORIES_FN)
     logger.debug('categories_table downloaded from S3')
@@ -273,12 +272,12 @@ def download_or_create_categories_table(s3):
   return categories_table
 
 
-
+Path(BASE_DIR).mkdir(parents=True, exist_ok=True)
 logger = logging.getLogger(__name__)
 logger.setLevel(LOGGING_LEVEL)
 formatter = logging.Formatter(fmt='%(asctime)s %(levelname)-8s %(message)s',
                                   datefmt='%Y-%m-%d %H:%M:%S')
-file_handler = logging.FileHandler(LOGGING_FN)
+file_handler = logging.FileHandler(BASE_DIR + LOGGING_FN)
 file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 logger.addHandler(logging.StreamHandler()) # TODO: remove output to console
